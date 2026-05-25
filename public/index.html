@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>HelpDesk Smart Priority</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 80px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 25px; padding: 15px; border-bottom: 1px solid #ddd; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input, select, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        button { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #0056b3; }
+        .ticket-card { 
+            background: #fdfdfd; 
+            padding: 15px; 
+            margin-top: 10px; 
+            border-left: 5px solid #007bff; 
+            border-radius: 4px; 
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.05); /* <-- CORREGIDO AQUÍ */
+            position: relative; 
+        }
+        .Alta { border-left-color: #dc3545; }
+        .Media { border-left-color: #ffc107; }
+        .Baja { border-left-color: #28a745; }
+        .btn-delete { background: #dc3545; position: absolute; right: 10px; top: 10px; font-size: 12px; padding: 5px 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>HelpDesk Smart Priority - Panel de Control</h2>
+
+    <div class="section" id="auth-section">
+        <h3>🔑 Credenciales de Acceso (API Key)</h3>
+        <label>Ingresa tu API Key de Escritura:</label>
+        <input type="password" id="apiKeyInput" value="FDN-ST-2026">
+        <p style="font-size: 12px; color: #666;">Por defecto para la prueba: <code>FDN-ST-2026</code></p>
+    </div>
+
+    <div class="section">
+        <h3>🎫 Registrar Nuevo Ticket de Soporte</h3>
+        <form id="ticketForm">
+            <label>Nombre del Solicitante:</label>
+            <input type="text" id="nombreSolicitante" required placeholder="Ej: Yung Samy">
+
+            <label>Tipo de Usuario:</label>
+            <select id="tipoUsuario">
+                <option value="estudiante">Estudiante</option>
+                <option value="docente">Docente</option>
+                <option value="funcionario">Funcionario</option>
+            </select>
+
+            <label>Gravedad de la Falla:</label>
+            <select id="gravedad">
+                <option value="baja">Baja (Falla cosmética / Consultas)</option>
+                <option value="media">Media (Problema parcial en estación)</option>
+                <option value="alta">Alta (Bloqueo total de actividades)</option>
+            </select>
+
+            <label>Impacto del Problema:</label>
+            <select id="impacto">
+                <option value="individual">Individual (Solo a mí)</option>
+                <option value="grupal">Grupal (A mi sección o laboratorio)</option>
+                <option value="institucional">Institucional (Afecta a toda la sede)</option>
+            </select>
+
+            <label>Descripción del Problema:</label>
+            <textarea id="descripcion" rows="3" required placeholder="Describa el inconveniente técnico aquí..."></textarea>
+
+            <button type="submit">Enviar Ticket</button>
+        </form>
+    </div>
+
+    <div class="section">
+        <h3>📋 Cola de Tickets Activos (Orden de Prioridad Automática)</h3>
+        <div id="listaTickets"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = '/api/tickets';
+
+    async function cargarTickets() {
+        const res = await fetch(API_URL);
+        const json = await res.json();
+        const lista = document.getElementById('listaTickets');
+        lista.innerHTML = '';
+
+        if(json.datos.length === 0) {
+            lista.innerHTML = '<p>No hay tickets pendientes en la cola.</p>';
+            return;
+        }
+
+        // Ordenar dinámicamente para mostrar Alta prioridad primero en la interfaz
+        const prioridadOrden = { 'Alta': 3, 'Media': 2, 'Baja': 1 };
+        json.datos.sort((a, b) => prioridadOrden[b.prioridad] - prioridadOrden[a.prioridad]);
+
+        json.datos.forEach(ticket => {
+            const div = document.createElement('div');
+            div.className = `ticket-card ${ticket.prioridad}`;
+            div.innerHTML = `
+                <h4>${ticket.nombreSolicitante} <span style="font-size:12px; font-weight:normal;">(${ticket.tipoUsuario})</span></h4>
+                <p><strong>Descripción:</strong> ${ticket.descripcion}</p>
+                <p><strong>Prioridad Calculada:</strong> <span style="font-weight:bold;">${ticket.prioridad}</span> (G: ${ticket.gravedad} | I: ${ticket.impacto})</p>
+                <button class="btn-delete" onclick="eliminarTicket('${ticket.id}')">Resolver</button>
+            `;
+            lista.appendChild(div);
+        });
+    }
+
+    document.getElementById('ticketForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const apiKey = document.getElementById('apiKeyInput').value;
+
+        const datos = {
+            nombreSolicitante: document.getElementById('nombreSolicitante').value,
+            tipoUsuario: document.getElementById('tipoUsuario').value,
+            gravedad: document.getElementById('gravedad').value,
+            impacto: document.getElementById('impacto').value,
+            descripcion: document.getElementById('descripcion').value
+        };
+
+        const res = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey
+            },
+            body: JSON.stringify(datos)
+        });
+
+        const data = await res.json();
+        if(res.ok) {
+            alert('¡Ticket creado con éxito! Prioridad asignada: ' + data.datos.prioridad);
+            document.getElementById('ticketForm').reset();
+            cargarTickets();
+        } else {
+            alert('Error: ' + data.mensaje);
+        }
+    });
+
+    async function eliminarTicket(id) {
+        const apiKey = document.getElementById('apiKeyInput').value;
+        if(!confirm('¿Confirmas que el ticket ha sido resuelto?')) return;
+
+        const res = await fetch(`${API_URL}/${id}`, {
+            method: 'DELETE',
+            headers: { 'x-api-key': apiKey }
+        });
+
+        if(res.ok) {
+            cargarTickets();
+        } else {
+            const data = await res.json();
+            alert('Error: ' + data.mensaje);
+        }
+    }
+
+    // Carga inicial
+    cargarTickets();
+</script>
+</body>
+</html>
